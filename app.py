@@ -1,3 +1,11 @@
+"""
+Streamlit Chat Interface for the IAC Student API
+------------------------------------------------
+Wraps the Chat Completions endpoint of the college Student API in a
+visual web interface using Streamlit, with conversation history,
+a reset button, and token-usage monitoring.
+"""
+
 import os
 import requests
 import streamlit as st
@@ -11,6 +19,22 @@ load_dotenv()
 API_KEY = os.getenv("IAC_API_KEY")
 
 CHAT_URL = "https://server.iac.ac.il/api/v1/studentapi/chat/completions"
+
+
+# -------------------------------------------------
+# System prompt (single source of truth)
+# -------------------------------------------------
+SYSTEM_PROMPT = (
+    "You are a helpful assistant. "
+    "If the user writes in Hebrew, answer in Hebrew. "
+    "If the user writes in English, answer in English. "
+    "Keep answers clear, simple, and helpful."
+)
+
+
+def initial_messages():
+    """Return a fresh message history that contains only the system prompt."""
+    return [{"role": "system", "content": SYSTEM_PROMPT}]
 
 
 # -------------------------------------------------
@@ -49,20 +73,13 @@ def get_headers():
 
 
 # -------------------------------------------------
-# Session state - chat history
+# Session state - chat history & cumulative token usage
 # -------------------------------------------------
 if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a helpful assistant. "
-                "If the user writes in Hebrew, answer in Hebrew. "
-                "If the user writes in English, answer in English. "
-                "Keep answers clear, simple, and helpful."
-            )
-        }
-    ]
+    st.session_state.messages = initial_messages()
+
+if "total_tokens" not in st.session_state:
+    st.session_state.total_tokens = 0
 
 
 # -------------------------------------------------
@@ -81,18 +98,12 @@ with st.sidebar:
 
     st.write("Model: GPT-5-NANO")
 
+    st.divider()
+    st.metric("Total tokens used (this session)", st.session_state.total_tokens)
+
     if st.button("Clear chat"):
-        st.session_state.messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a helpful assistant. "
-                    "If the user writes in Hebrew, answer in Hebrew. "
-                    "If the user writes in English, answer in English. "
-                    "Keep answers clear, simple, and helpful."
-                )
-            }
-        ]
+        st.session_state.messages = initial_messages()
+        st.session_state.total_tokens = 0
         st.rerun()
 
 
@@ -100,34 +111,35 @@ with st.sidebar:
 # Function to call the LLM API
 # -------------------------------------------------
 def get_llm_response(messages, max_tokens):
+    """Send the conversation to the API and return (answer_text, usage_dict)."""
     payload = {
         "messages": messages,
         "max_completion_tokens": max_tokens
     }
 
-    response = requests.post(
-        CHAT_URL,
-        json=payload,
-        headers=get_headers()
-    )
+    try:
+        response = requests.post(CHAT_URL, json=payload, headers=get_headers(), timeout=30)
+    except requests.exceptions.RequestException as network_error:
+        return f"Network error: {network_error}", {}
 
     try:
         result = response.json()
-    except Exception:
-        return f"Error: could not read API response. Status code: {response.status_code}"
+    except ValueError:
+        return f"Error: could not read API response. Status code: {response.status_code}", {}
 
     if response.status_code != 200:
-        return f"Error from API: {result}"
+        return f"Error from API: {result}", {}
 
     if "choices" not in result:
-        return f"Unexpected response from API: {result}"
+        return f"Unexpected response from API: {result}", {}
 
     answer = result["choices"][0]["message"]["content"]
+    usage = result.get("usage", {})
 
     if answer is None or answer.strip() == "":
-        return f"המודל החזיר תשובה ריקה. תשובת השרת המלאה: {result}"
+        return f"המודל החזיר תשובה ריקה. תשובת השרת המלאה: {result}", usage
 
-    return answer
+    return answer, usage
 
 
 # -------------------------------------------------
@@ -146,12 +158,7 @@ user_prompt = st.chat_input("Type your message...")
 
 if user_prompt:
     # Add user message to history
-    st.session_state.messages.append(
-        {
-            "role": "user",
-            "content": user_prompt
-        }
-    )
+    st.session_state.messages.append({"role": "user", "content": user_prompt})
 
     # Display user message
     with st.chat_message("user"):
@@ -163,21 +170,24 @@ if user_prompt:
         response_placeholder.markdown("Thinking...")
 
         try:
-            assistant_reply = get_llm_response(
+            assistant_reply, usage = get_llm_response(
                 messages=st.session_state.messages,
                 max_tokens=max_tokens
             )
-
             response_placeholder.markdown(assistant_reply)
+
+            # Display per-turn token usage
+            if usage:
+                st.caption(
+                    f"Tokens this turn — prompt: {usage.get('prompt_tokens', 0)}, "
+                    f"completion: {usage.get('completion_tokens', 0)}, "
+                    f"total: {usage.get('total_tokens', 0)}"
+                )
+                st.session_state.total_tokens += usage.get("total_tokens", 0)
 
         except Exception as error:
             assistant_reply = f"General error: {str(error)}"
             response_placeholder.error(assistant_reply)
 
     # Save assistant response to history
-    st.session_state.messages.append(
-        {
-            "role": "assistant",
-            "content": assistant_reply
-        }
-    )
+    st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
