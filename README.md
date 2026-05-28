@@ -102,6 +102,11 @@ python chat_cli.py
 
 כדי לצאת מהצ'אט יש לכתוב `exit`.
 
+![simple_chat.png.png](images/simple_chat.png.png)
+
+![agent.png.png](images/agent.png.png)
+
+
 ## הרצת אפליקציית Streamlit
 
 ```bash
@@ -109,6 +114,7 @@ streamlit run app.py
 ```
 
 לאחר ההרצה תיפתח האפליקציה בדפדפן בכתובת המקומית, בדרך כלל `http://localhost:8501`. בממשק ניתן לראות את היסטוריית השיחה, סרגל צד עם כפתור איפוס שיחה ומחוון `Max completion tokens`, וכן הצגה של צריכת הטוקנים בכל סבב ובמצטבר.
+![streamlit.png.png](images/streamlit.png.png)
 
 ## מבנה הפרויקט
 
