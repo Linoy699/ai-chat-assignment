@@ -101,7 +101,7 @@ def simple_chat():
 
         payload = {
             "messages": messages,
-            "max_completion_tokens": 1000
+            "max_completion_tokens": 10000
         }
 
         try:
